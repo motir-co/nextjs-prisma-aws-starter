@@ -14,8 +14,9 @@ loadEnv();
 // Migrations use the UNPOOLED URL (direct connection); runtime queries use
 // the pooled URL. Neon's pooler (PgBouncer in transaction mode) breaks
 // long-running statements + prepared statements, both of which migrations
-// need. Vercel-Neon integration sets both DATABASE_URL (pooled) and
-// DATABASE_URL_UNPOOLED. For local dev (single Docker Postgres, no pooler),
+// need. On AWS the database has no pooler in front of it, so the image's
+// entrypoint sets DATABASE_URL alone and the migration step uses it. For
+// local dev (single Docker Postgres, no pooler),
 // the same URL works for both, so fall back to DATABASE_URL when UNPOOLED
 // isn't set.
 //

@@ -45,6 +45,7 @@ const eslintConfig = defineConfig([
     // Project additions:
     'node_modules/**',
     'prisma/migrations/**',
+    'infra/cdk.out/**',
   ]),
 ]);
 

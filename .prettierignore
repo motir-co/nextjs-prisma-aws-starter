@@ -12,3 +12,6 @@ prisma/migrations/
 
 # Canonical legal text — DO NOT reformat (would change meaning).
 LICENSE
+
+# CDK synth output
+infra/cdk.out/

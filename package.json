@@ -1,8 +1,8 @@
 {
-  "name": "nextjs-prisma-vercel-starter",
+  "name": "nextjs-prisma-aws-starter",
   "version": "0.0.0",
   "private": true,
-  "description": "Production-ready Next.js + Prisma + Vercel + Neon starter, with discovered gotchas baked in.",
+  "description": "Production-ready Next.js + Prisma + Postgres starter for AWS: one container image, CDK infrastructure for Lambda (functions) or ECS Fargate (containers), RDS for PostgreSQL, and migrations on deploy, with discovered gotchas baked in.",
   "license": "MIT",
   "engines": {
     "node": ">=22"
@@ -10,7 +10,9 @@
   "packageManager": "pnpm@11.2.2",
   "scripts": {
     "dev": "next dev",
-    "build": "prisma migrate deploy && next build",
+    "build": "next build",
+    "db:migrate": "prisma migrate deploy",
+    "infra:synth": "cd infra && cdk synth -q -c mode=functions -o cdk.out/functions && cdk synth -q -c mode=containers -o cdk.out/containers",
     "start": "next start",
     "lint": "eslint",
     "format": "prettier --write .",
@@ -48,6 +50,7 @@
     "react-dom": "19.2.4"
   },
   "devDependencies": {
+    "@aws-sdk/client-secrets-manager": "^3.1158.0",
     "@playwright/test": "^1.60.0",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^22.19.19",
@@ -55,6 +58,9 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@vitest/coverage-v8": "^4.1.7",
+    "aws-cdk": "^2.1146.1",
+    "aws-cdk-lib": "^2.275.0",
+    "constructs": "^10.8.1",
     "dotenv": "^17.4.2",
     "eslint": "^9",
     "eslint-config-next": "16.2.6",

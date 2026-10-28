@@ -64,9 +64,9 @@ const fraunces = Fraunces({
 });
 
 export const metadata: Metadata = {
-  title: 'Next.js + Prisma + Vercel + Neon starter',
+  title: 'Next.js + Prisma AWS starter',
   description:
-    'Production-ready starter with the discovered gotchas baked in: postinstall prisma generate, DATABASE_URL_UNPOOLED for migrations, Prisma 7 conditional config, Node 22+. Skinned with the Motir 3-axis design system.',
+    'Production-ready AWS starter with the discovered gotchas baked in: postinstall prisma generate, migrations on deploy, Lambda or ECS from one image, Prisma 7 conditional config, Node 22+. Skinned with the Motir 3-axis design system.',
 };
 
 export default async function RootLayout({
