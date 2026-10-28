@@ -11,7 +11,7 @@
 
 import { spawn } from 'node:child_process';
 import { constants } from 'node:os';
-import { resolveEnvironment } from './environment.mjs';
+import { EnvironmentError, resolveEnvironment } from './environment.mjs';
 
 const [command, ...args] = process.argv.slice(2);
 if (!command) {
@@ -23,8 +23,6 @@ async function readSecret(arn) {
   const { SecretsManagerClient, GetSecretValueCommand } =
     await import('@aws-sdk/client-secrets-manager');
   const out = await new SecretsManagerClient({}).send(new GetSecretValueCommand({ SecretId: arn }));
-  if (typeof out.SecretString !== 'string')
-    throw new Error(`The secret ${arn} has no string value`);
   return out.SecretString;
 }
 
@@ -32,7 +30,13 @@ let added;
 try {
   added = await resolveEnvironment(process.env, readSecret);
 } catch (error) {
-  console.error(`entrypoint: ${error instanceof Error ? error.message : String(error)}`);
+  // Only an EnvironmentError's message is printed: it names variables, never
+  // their values. Anything else is reported by its class alone.
+  const reason =
+    error instanceof EnvironmentError
+      ? error.message
+      : `could not load the environment (${error instanceof Error ? error.name : typeof error})`;
+  console.error(`entrypoint: ${reason}`);
   process.exit(78);
 }
 

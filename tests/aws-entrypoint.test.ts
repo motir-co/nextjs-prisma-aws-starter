@@ -1,7 +1,12 @@
 import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { databaseUrl, RDS_CA_BUNDLE, resolveEnvironment } from '../scripts/aws/environment.mjs';
+import {
+  databaseUrl,
+  EnvironmentError,
+  RDS_CA_BUNDLE,
+  resolveEnvironment,
+} from '../scripts/aws/environment.mjs';
 
 // THE IMAGE'S AWS ENTRYPOINT (MOTIR-9812): on AWS it turns the secret ARNs the
 // stack hands the process into DATABASE_URL and the app's other variables; off
@@ -72,6 +77,26 @@ describe('resolveEnvironment', () => {
     await expect(
       resolveEnvironment({ MOTIR_ENV_SECRET_ARN: ENV_ARN }, async () => 'not json'),
     ).rejects.toThrow('The secret named by MOTIR_ENV_SECRET_ARN is not JSON');
+  });
+
+  it('reports a failed read by its variable and error class, never the SDK message', async () => {
+    class AccessDeniedException extends Error {
+      override name = 'AccessDeniedException';
+    }
+    const failure = resolveEnvironment({ MOTIR_DATABASE_SECRET_ARN: DB_ARN }, async () => {
+      throw new AccessDeniedException(`denied; leaked ${rdsSecret.password}`);
+    });
+    await expect(failure).rejects.toThrow(EnvironmentError);
+    await expect(failure).rejects.toThrow(
+      'Reading the secret named by MOTIR_DATABASE_SECRET_ARN failed: AccessDeniedException',
+    );
+    await expect(failure).rejects.not.toThrow(rdsSecret.password);
+  });
+
+  it('refuses a secret with no string value', async () => {
+    await expect(
+      resolveEnvironment({ MOTIR_ENV_SECRET_ARN: ENV_ARN }, async () => undefined),
+    ).rejects.toThrow('The secret named by MOTIR_ENV_SECRET_ARN has no string value');
   });
 });
 
