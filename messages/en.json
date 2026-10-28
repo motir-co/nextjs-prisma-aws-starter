@@ -3,7 +3,7 @@
     "signOut": "Sign out"
   },
   "home": {
-    "title": "Next.js + Prisma + Vercel + Neon",
+    "title": "Next.js + Prisma + Postgres on AWS",
     "editHint": "Edit <code>app/page.tsx</code> to start building."
   },
   "dashboard": {

@@ -1,19 +1,22 @@
-# nextjs-prisma-vercel-starter
+# nextjs-prisma-aws-starter
 
-A production-ready starter for **Next.js + Prisma + Vercel + Neon**, with the
-discovered gotchas baked in. Click "Use this template" above and ship in
-minutes.
-
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fmoooon-B-V%2Fnextjs-prisma-vercel-starter)
+A production-ready **AWS** starter for **Next.js + Prisma + Postgres**, with
+the discovered gotchas baked in. It builds into one container image, and its
+CDK app ([`infra/`](infra)) describes everything that image needs in an AWS
+account: **Lambda** (functions mode) or **ECS Fargate** (containers mode), a
+private **RDS for PostgreSQL**, and migrations that run inside the VPC on every
+deploy.
+Click "Use this template" above and ship in minutes.
 
 ## What this is
 
 A starter template for the **fast path** to a deployed full-stack Next.js
-app: Next.js 16 + Prisma 7 + Tailwind v4 + TypeScript strict mode, deployed
-to Vercel with a managed Neon Postgres. CI on GitHub Actions runs lint +
-typecheck + build against a real Postgres on every PR. Husky pre-commit
-hooks keep style consistent. Vercel preview deploys fire automatically and
-get isolated Neon DB branches per PR.
+app: Next.js 16 + Prisma 7 + Tailwind v4 + TypeScript strict mode, built as a
+standalone server in one `linux/amd64` image ([`Dockerfile`](Dockerfile)),
+described to the host by [`motir.hosting.json`](motir.hosting.json), with its
+AWS resources as code in [`infra/`](infra). CI on
+GitHub Actions runs lint + typecheck + build against a real Postgres on every
+PR. Husky pre-commit hooks keep style consistent.
 
 ## Why this and not `create-next-app`?
 
@@ -21,13 +24,13 @@ get isolated Neon DB branches per PR.
 This starter gives you the other 90%, with **specific gotchas already
 fixed**:
 
-- **`postinstall: prisma generate`** — Vercel's build cache aggressively
-  reuses `node_modules`, which stales out Prisma's generated client. Without
-  this hook your first deploy after a schema change fails with a confusing
+- **`postinstall: prisma generate`** — a build cache that reuses
+  `node_modules` stales out Prisma's generated client. Without this hook
+  your first build after a schema change fails with a confusing
   "Cannot find module '@prisma/client'" error. The fix lives in
   [`package.json`](package.json).
-- **Pooled vs. unpooled DATABASE_URL split** — the Vercel-Neon integration
-  sets ~10 env vars. The two that matter: `DATABASE_URL` (pooled via
+- **Pooled vs. unpooled DATABASE_URL split** — behind a pooler (RDS Proxy,
+  a serverless Postgres) you get two URLs: `DATABASE_URL` (pooled via
   PgBouncer, fast for runtime queries) and `DATABASE_URL_UNPOOLED` (direct,
   required for Prisma migrations because PgBouncer in transaction mode
   breaks them). [`prisma.config.ts`](prisma.config.ts) reads `_UNPOOLED` for
@@ -44,33 +47,23 @@ generate` doesn't need a database connection, but if `prisma.config.ts`
   something on 5432. The container internally uses 5432; only the host port
   is shifted.
 
-These took CI failures and Vercel deploy failures to discover. Now they don't.
+- **The build never migrates** — `pnpm build` is `next build` and needs no
+  database; migrations are `pnpm db:migrate`, run from the image as the
+  manifest's `database.migrateCommand` before a release takes traffic.
+
+These took CI failures and deploy failures to discover. Now they don't.
 
 ## Quickstart
 
-### Option 1: Deploy to Vercel (recommended)
+### Option 1: Deploy through Motir (recommended)
 
-Click the **Deploy with Vercel** button above. Vercel will:
+A repository Motir creates from this starter is deployed by Motir's hosting:
+its CI builds the image from the [`Dockerfile`](Dockerfile) and pushes it, and
+Motir's AWS adapter deploys [`infra/`](infra) into the tenant's AWS account:
+the migration step runs first, then the app takes traffic once
+`GET /api/health` answers. Nothing to configure. See [Deploy](#deploy).
 
-1. Clone this template into your GitHub account
-2. Create a Vercel project from the new repo
-3. Prompt you to install the **Neon Postgres** integration from Vercel's
-   Storage tab — accept it; the integration auto-sets `DATABASE_URL` and
-   `DATABASE_URL_UNPOOLED` for both Production and Preview scopes
-4. Deploy the placeholder page
-
-Then clone your new repo locally to start building:
-
-```bash
-git clone <your-new-repo-url>
-cd <your-new-repo>
-corepack enable
-cp .env.example .env  # then paste your Neon connection string into DATABASE_URL
-pnpm install
-pnpm dev
-```
-
-### Option 2: Local-first (Docker Postgres, no Vercel yet)
+### Option 2: Local-first (Docker Postgres)
 
 ```bash
 git clone <your-new-repo-url>
@@ -82,7 +75,13 @@ pnpm install
 pnpm dev              # http://localhost:3000
 ```
 
-Then connect to Vercel + Neon when you're ready to ship.
+To run the production image locally:
+
+```bash
+docker buildx build --platform linux/amd64 -t app .
+docker run --rm -p 3000:3000 -e BETTER_AUTH_SECRET=$(openssl rand -base64 32) app
+curl http://localhost:3000/api/health   # {"status":"ok"}
+```
 
 ## Stack
 
@@ -90,12 +89,13 @@ Then connect to Vercel + Neon when you're ready to ship.
 - **Framework**: [Next.js 16](https://nextjs.org) (App Router, React Server Components, Turbopack)
 - **Language**: [TypeScript](https://www.typescriptlang.org) (strict mode; `noUncheckedIndexedAccess`, `noImplicitOverride`, `noFallthroughCasesInSwitch`)
 - **Styling**: [Tailwind CSS v4](https://tailwindcss.com) + [`@motir/design-system`](https://www.npmjs.com/package/@motir/design-system) — Motir's 3-axis design system (Colour · Style · Type), wired in out of the box (see [Design system](#design-system))
-- **Database**: [Postgres 16](https://www.postgresql.org) (local Docker; managed [Neon](https://neon.tech) in production via the [Vercel-Neon integration](https://vercel.com/marketplace/neon))
+- **Database**: [Postgres 16](https://www.postgresql.org) (local Docker; RDS for PostgreSQL on AWS)
 - **ORM**: [Prisma 7](https://www.prisma.io) with [`@prisma/adapter-pg`](https://www.npmjs.com/package/@prisma/adapter-pg)
 - **Lint / format**: [ESLint 9](https://eslint.org) (flat config) + [Prettier 3](https://prettier.io) + [Husky](https://typicode.github.io/husky) pre-commit + [lint-staged](https://github.com/lint-staged/lint-staged)
 - **Package manager**: [pnpm](https://pnpm.io) (pinned via `packageManager` field; use `corepack enable`)
 - **CI**: [GitHub Actions](https://docs.github.com/actions) — 3 parallel jobs (lint, typecheck, build with Postgres service container)
-- **Deploy**: [Vercel](https://vercel.com) with [Neon Postgres](https://neon.tech) (per-PR isolated DB branches for preview deploys)
+- **Infrastructure**: [AWS CDK](https://docs.aws.amazon.com/cdk/v2/guide/home.html) in TypeScript ([`infra/`](infra))
+- **Deploy**: one container image ([`Dockerfile`](Dockerfile), `output: 'standalone'`) run on AWS Lambda through the [Lambda Web Adapter](https://github.com/awslabs/aws-lambda-web-adapter) or on ECS Fargate; see [Deploy](#deploy)
 
 ## Design system
 
@@ -127,26 +127,24 @@ the design system can never drift into a second, divergent copy.
   block. Reference colour through the `--el-*` tokens (e.g.
   `text-(--el-text)`, `bg-(--el-surface)`), never raw hexes.
 - **`app/layout.tsx`** loads the type-axis fonts (as `--font-*-source`
-  variables), sets the **default** design on `<html>` (Colour `motir` · Style
-  `warm-editorial` · Type `motir`) via `resolveAxesToApplied({})`, renders the
-  FOUC-safe `buildThemeInitScript(null)`, and wraps the app in the package's
-  `ThemeProvider` + `ToastProvider`.
+  variables), sets the **project's** design on `<html>` from
+  [`motir.design.json`](motir.design.json) via
+  `resolveAxesToApplied(projectDesign)`, renders the FOUC-safe
+  `buildThemeInitScript(applied)` with the same design, and wraps the app in
+  the package's `ThemeProvider` + `ToastProvider`.
 - **`@/components/ui`** re-exports the primitives (`Button`, `Card`, `Modal`,
   `Input`, `Pill`, …) — or import them directly from `@motir/design-system`.
 - **`/tokens`** renders the package's live `TokensSpecimen` — the same specimen
   motir-core uses — so you have an always-in-sync reference of every primitive
   plus the axis pickers to preview the swaps live.
 
-**Applying a specific choice.** To ship a non-default design, resolve the axes
-and pass them to both the init script and the provider (the same seam
-motir-core's scaffold agent uses to re-apply a planner-stored choice):
-
-```tsx
-import { resolveAxesToApplied, buildThemeInitScript } from '@motir/design-system';
-const applied = resolveAxesToApplied({ styleId, paletteId, typeId }); // your choice
-// <html data-style={applied.styleId} data-palette={applied.paletteId} data-type={applied.typeId}>
-// <script dangerouslySetInnerHTML={{ __html: buildThemeInitScript(applied) }} />
-```
+**Applying a specific choice.** The design is the three ids in
+[`motir.design.json`](motir.design.json), which ships with the registry
+defaults (Colour `motir` · Style `warm-editorial` · Type `motir`). When Motir
+creates a repository from this starter it writes the project's chosen ids
+there in the first commit, with a `DESIGN.md` naming them. To change the look,
+set other registered ids in that file; an unknown id falls back to that axis's
+default.
 
 > **`nextjs-prisma-vercel-starter-with-design`** was an earlier, partial
 > hand-copied port of the design system. It is **superseded** by this
@@ -155,18 +153,20 @@ const applied = resolveAxesToApplied({ styleId, paletteId, typeId }); // your ch
 
 ## Scripts
 
-| Script                     | What it does                                                        |
-| -------------------------- | ------------------------------------------------------------------- |
-| `pnpm dev`                 | Start the dev server on `localhost:3000`                            |
-| `pnpm build`               | Apply pending Prisma migrations, then production build (0 warnings) |
-| `pnpm start`               | Start the production server                                         |
-| `pnpm lint`                | Run ESLint                                                          |
-| `pnpm format`              | Run Prettier and write fixes in place                               |
-| `pnpm format:check`        | Run Prettier in check mode (used by CI)                             |
-| `pnpm typecheck`           | Run `tsc --noEmit`                                                  |
-| `pnpm test`                | Run Vitest unit / integration tests against a real Postgres         |
-| `pnpm test:e2e`            | Run Playwright E2E tests (spawns the dev server automatically)      |
-| `pnpm test:e2e:acceptance` | Run the acceptance lane (records a clip per story flow)             |
+| Script                     | What it does                                                      |
+| -------------------------- | ----------------------------------------------------------------- |
+| `pnpm dev`                 | Start the dev server on `localhost:3000`                          |
+| `pnpm build`               | Production build (0 warnings); touches no database                |
+| `pnpm db:migrate`          | Apply pending Prisma migrations (`prisma migrate deploy`)         |
+| `pnpm infra:synth`         | Synthesize the CDK app for both modes (no AWS credentials needed) |
+| `pnpm start`               | Start the production server                                       |
+| `pnpm lint`                | Run ESLint                                                        |
+| `pnpm format`              | Run Prettier and write fixes in place                             |
+| `pnpm format:check`        | Run Prettier in check mode (used by CI)                           |
+| `pnpm typecheck`           | Run `tsc --noEmit`                                                |
+| `pnpm test`                | Run Vitest unit / integration tests against a real Postgres       |
+| `pnpm test:e2e`            | Run Playwright E2E tests (spawns the dev server automatically)    |
+| `pnpm test:e2e:acceptance` | Run the acceptance lane (records a clip per story flow)           |
 
 ## Project layout
 
@@ -199,6 +199,10 @@ design/       Design assets — two files per surface (notes + mock), published
               when work waits on the design. See `design/README.md`.
 docs/         Project docs.
 scripts/      Dev scripts. `db-up.sh` brings up Docker Postgres + migrations.
+              `aws/` — the image's entrypoint, which loads the stack's secrets.
+infra/        The AWS CDK app: `bin/app.ts` reads the context values,
+              `lib/app-stack.ts` is the one stack (functions or containers),
+              `migration-runner/` runs the migration task on each deploy.
 public/       Static assets.
 .github/
   workflows/  CI definitions: `ci.yml` (lint, typecheck, unit, build, e2e),
@@ -305,7 +309,7 @@ After clicking "Use this template," you'll want to rename a few things:
 1. **`package.json`** — change `"name"` and `"description"`
 2. **`app/page.tsx`** and **`app/layout.tsx`** — replace the placeholder content
 3. **`docker-compose.yml`** + **`.env.example`** + **`scripts/db-up.sh`** —
-   the DB user/password/name is currently `nextjs_prisma_vercel_starter`;
+   the DB user/password/name is currently `nextjs_prisma_aws_starter`;
    change to match your project
 4. **`prisma/schema.prisma`** — delete the `Marker` placeholder once you add
    your first real model (it exists only so the initial migration has
@@ -354,64 +358,113 @@ real design system.
 
 ### Required environment variables
 
-Set these wherever you deploy (Vercel: Settings → Environment Variables;
-local: `.env`).
+Set these wherever you deploy (the hosting environment's secrets; local:
+`.env`).
 
 - `BETTER_AUTH_SECRET` — random 32-byte secret. Generate with
   `openssl rand -base64 32`. Rotating invalidates all active sessions.
-- `BETTER_AUTH_URL` — public origin (e.g. `https://your-app.vercel.app`).
+- `BETTER_AUTH_URL` — public origin (e.g. `https://app.example.com`).
   Optional locally (defaults to `http://localhost:3000`); MUST be set in
   production so OAuth callback URLs are correct.
 - `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` — from
   Google Cloud Console → APIs & Services → Credentials → OAuth 2.0 Client
   ID (Web application). Authorized redirect URI:
-  `{BETTER_AUTH_URL}/api/auth/callback/google`. Required at module load —
-  missing values throw immediately so misconfiguration surfaces loudly.
+  `{BETTER_AUTH_URL}/api/auth/callback/google`. **Optional**: with both
+  set, the provider is registered and the pages show "Continue with
+  Google"; with either missing, sign-in is email and password only.
 - `EMAIL_PROVIDER` — `console` (default) for dev. Real providers
   (`resend`, `postmark`) are NOT YET WIRED: choose one and implement it in
   [`lib/email.ts`](lib/email.ts) before going to production with password
   reset enabled.
 
-If you don't want Google sign-in, delete the `socialProviders.google`
-block from [`lib/auth/index.ts`](lib/auth/index.ts) and remove
-`<GoogleButton />` from the sign-in / sign-up pages.
+## Deploy
 
-### Cleanup workflow (preview database branches)
+This is the **AWS** starter: for an enterprise app that runs in an AWS account
+of its own. Motir deploys it; nothing in this repository deploys itself. Its
+siblings are the serverless and Fly starters.
 
-[`cleanup-preview-deployments.yml`](.github/workflows/cleanup-preview-deployments.yml)
-deletes Vercel preview deployments when their PR closes, which cascades
-to deleting the linked Neon (or other Marketplace-managed) database
-branch — without it, preview branches accumulate against your free-tier
-cap and new PR previews start failing with "Resource provisioning failed".
+### Hosting on AWS
 
-It needs three pieces of GitHub repo configuration (Settings → Secrets and
-variables → Actions):
+[`infra/`](infra) is one CDK stack. The context value `mode` picks the compute,
+because inside AWS the size decides it:
 
-| Where         | Name                | Value                                                   |
-| ------------- | ------------------- | ------------------------------------------------------- |
-| **Secrets**   | `VERCEL_TOKEN`      | A Vercel Access Token with deployment-delete permission |
-| **Variables** | `VERCEL_ORG_ID`     | Your team/account ID (visible in `.vercel/repo.json`)   |
-| **Variables** | `VERCEL_PROJECT_ID` | Your Vercel project ID (visible in `.vercel/repo.json`) |
+| `mode`                | Runs the image on                                                    | Reached through                                                                                    |
+| --------------------- | -------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| `functions` (default) | AWS Lambda, through the Lambda Web Adapter, alias `live`, in the VPC | a function URL with `AWS_IAM` auth: only a SigV4-signed caller (Motir's forwarder) may invoke it   |
+| `containers`          | ECS Fargate in private subnets                                       | an Application Load Balancer that answers `403` unless the request carries `X-Motir-Origin-Secret` |
 
-`VERCEL_ORG_ID` and `VERCEL_PROJECT_ID` are stored as variables (not
-secrets) because they appear in the linked `.vercel/repo.json` and aren't
-sensitive — anyone with repo access can already see them.
+Both modes share the rest of the stack:
 
-**If you set none of them, nothing breaks.** A repo that isn't linked to a
-Vercel project has no preview deployments to delete, so the workflow logs a
-notice and exits successfully. You will still see a green
-`Delete preview deployments` check on every closed PR — the workflow is
-triggered by `pull_request: closed`, and that trigger can't be filtered on
-whether the config exists, so the job runs and reports a no-op rather than
-not appearing at all. (Contrast the acceptance lane above, whose
-opt-in _is_ expressible as a `paths:` filter, so it leaves no check
-behind.)
+- **A VPC** with public subnets (NAT, load balancer), app subnets (egress
+  through one NAT gateway) and data subnets with no route out.
+- **RDS for PostgreSQL 17**, encrypted, not publicly accessible, in the data
+  subnets. Its security group admits port 5432 from the app and the migration
+  step only. Its credentials are generated into Secrets Manager
+  (`<appName>/database`); the app is handed the secret's ARN, never its value.
+- **An environment secret** (`<appName>/environment`), a JSON object of the
+  app's other variables, starting with a generated `BETTER_AUTH_SECRET`.
+- **The migration step** — the manifest's `database.migrateCommand`, run as a
+  one-off Fargate task inside the VPC, from the release's image, by a custom
+  resource that waits for it to exit 0. The app depends on it, so every deploy
+  migrates **before** the new release takes traffic, and a failed migration
+  rolls the deploy back. **The build no longer migrates.**
+- **Outputs** the adapter reads: `AppUrl`, `MigrationTaskDefinitionArn`,
+  `MigrationClusterArn`, `DatabaseSecretArn`, `EnvironmentSecretArn`.
 
-Setting **some but not all three** is the one case that fails the check, on
-purpose: cleanup is not running, and preview database branches are quietly
-accumulating until new previews fail with "Resource provisioning failed."
-The job names exactly which values are missing. Clear all three to opt out
-entirely.
+Every input is a context value the adapter passes; no account id, region or
+credential is written here:
+
+| Context           | Meaning                                                     | Default                     |
+| ----------------- | ----------------------------------------------------------- | --------------------------- |
+| `appName`         | the stack's name and every named resource (a DNS label)     | `nextjs-prisma-aws-starter` |
+| `mode`            | `functions` or `containers`                                 | `functions`                 |
+| `imageRepository` | the ECR repository CI pushed to                             | `appName`                   |
+| `imageTag`        | the release's tag or digest                                 | `latest`                    |
+| `appUrl`          | the public origin, given to the app as `BETTER_AUTH_URL`    | —                           |
+| `certificateArn`  | containers: HTTPS on the load balancer                      | — (HTTP on port 80)         |
+| `invokerArn`      | functions: the principal allowed to invoke the function URL | —                           |
+
+Containers mode also takes the CloudFormation parameter `OriginSecret`
+(no-echo), the value Motir derives for the app.
+
+```bash
+pnpm infra:synth                                      # both modes, into infra/cdk.out/
+cd infra && npx cdk synth -c mode=containers -c appName=acme-crm
+```
+
+[`tests/infra.test.ts`](tests/infra.test.ts) asserts on both synthesized
+templates: the database is private and admits only the app and the migration
+step, its credential is a Secrets Manager secret, no IAM statement grants
+`*` on `*`, the migration precedes the app, and names derive from `appName`.
+
+### The image and the manifest
+
+- **The image** — a multi-stage `linux/amd64` build that runs the manifest's
+  `buildCommand` (`pnpm build`; override with build-arg `MOTIR_BUILD_COMMAND`),
+  copies the standalone server, `public/`, `.next/static` and the Prisma CLI
+  with `prisma/` into a slim Node runtime, and adds the Lambda Web Adapter
+  extension (inert outside Lambda). `argon2` is compiled inside that
+  `linux/amd64` build, so the native module matches Lambda and Fargate. It
+  starts with `node server.js` on port 3000.
+- **The entrypoint** — [`scripts/aws/entrypoint.mjs`](scripts/aws/entrypoint.mjs)
+  reads `MOTIR_DATABASE_SECRET_ARN` and `MOTIR_ENV_SECRET_ARN`, builds
+  `DATABASE_URL` (TLS, verified against the Amazon RDS CA bundle the image
+  ships) and the app's other variables, then runs its command. With neither
+  ARN set it just runs the command, so the image works anywhere.
+- **The manifest** — [`motir.hosting.json`](motir.hosting.json) tells Motir
+  the target (`aws`), the port, the health path (`/api/health`), the build
+  and start commands, and the database (`postgres`, migrated by
+  `database.migrateCommand`). The stack reads the same file, so the load
+  balancer's port, its health check and the migration step cannot drift from
+  it. [`tests/hosting-manifest.test.ts`](tests/hosting-manifest.test.ts) holds
+  every value true of this repository.
+- **The health route** — `GET /api/health` answers `200 {"status":"ok"}`
+  whenever the process serves requests. It does not touch the database, so an
+  unreachable database never fails a good release.
+- **The app's environment** — `DATABASE_URL`, `BETTER_AUTH_SECRET`,
+  `BETTER_AUTH_URL`, `EMAIL_PROVIDER`, and optionally `GOOGLE_CLIENT_ID` +
+  `GOOGLE_CLIENT_SECRET`. On AWS all of them arrive through the two secrets
+  above.
 
 ## License
 
