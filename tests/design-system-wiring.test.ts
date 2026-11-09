@@ -1,5 +1,5 @@
 import { createRequire } from 'node:module';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -65,6 +65,32 @@ describe('app/globals.css imports the package token CSS (no vendored copy)', () 
 
   it('@imports @motir/design-system/theme.css', () => {
     expect(css).toContain("@import '@motir/design-system/theme.css'");
+  });
+
+  // Tailwind v4 never scans node_modules on its own, so without this source a
+  // class used only inside a package component (the /tokens heading's serif
+  // face, its two-column vignette grid) is never generated and the component
+  // renders unstyled (MOTIR-10832). The path is resolved from app/ and must
+  // land on the INSTALLED package's dist, so a typo or a moved package turns
+  // this red rather than silently matching.
+  it('@sources the installed package dist so its component utilities generate', () => {
+    const sources = [...css.matchAll(/@source\s+'([^']+)'\s*;/g)].map((m) => m[1] ?? '');
+    const packageDist = realpathSync(
+      resolve(dirname(require.resolve('@motir/design-system/theme.css')), 'dist'),
+    );
+    // pnpm links node_modules/@motir/design-system into its store, so compare
+    // real paths on both sides.
+    const resolved = sources
+      .map((s) => resolve(repoRoot, 'app', s))
+      .filter((p) => existsSync(p))
+      .map((p) => realpathSync(p));
+    expect(resolved, `globals.css @source entries: ${sources.join(', ')}`).toContain(packageDist);
+    expect(existsSync(resolve(packageDist, 'index.js'))).toBe(true);
+    // Sourcing the dist must stay AFTER the theme import, which defines the
+    // @theme tokens the scanned utilities resolve against.
+    expect(css.indexOf("@source '../node_modules/@motir/design-system/dist'")).toBeGreaterThan(
+      css.indexOf("@import '@motir/design-system/theme.css'"),
+    );
   });
 
   it('drops the old hand-rolled raw-hex palette vars', () => {
