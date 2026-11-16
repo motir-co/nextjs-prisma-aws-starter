@@ -38,7 +38,7 @@
   },
   "dependencies": {
     "@better-auth/prisma-adapter": "^1.6.11",
-    "@motir/design-system": "0.22.0",
+    "@motir/design-system": "0.23.0",
     "@prisma/adapter-pg": "^7.8.0",
     "@prisma/client": "^7.8.0",
     "argon2": "^0.44.0",
@@ -51,7 +51,7 @@
   },
   "devDependencies": {
     "@aws-sdk/client-secrets-manager": "^3.1158.0",
-    "@playwright/test": "^1.60.0",
+    "@playwright/test": "^1.65.1",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^22.19.19",
     "@types/pg": "^8.20.0",
